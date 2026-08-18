@@ -1,4 +1,4 @@
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useEffect, useRef, useState } from "react";
 import { router } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
@@ -31,14 +31,29 @@ export default function OnboardingScreen() {
   }, [player, step, tapTimes.length]);
 
   const startPitchTest = async () => {
-    if (!isPitchTrackingAvailable()) {
-      return Alert.alert("而家呢個預覽未支援音高測試", "即時音高偵測需要包含原生音訊模組嘅 Android／iPhone 測試建置；耳機唔係按鈕無反應嘅原因。完成測試建置後，呢個按鈕會直接開始五秒收音。", [{ text: "知道" }]);
-    }
-    const permission = await requestRecordingPermissionsAsync();
-    if (!permission.granted) return Alert.alert("需要咪高峰權限", "容許使用咪高峰，先可以用你嘅聲音找出舒服音域。");
-    pitchValues.current = [];
+    setTestingPitch(true);
     setPitchFrames(0);
     setPitchFailure(null);
+    if (!isPitchTrackingAvailable()) {
+      setTestingPitch(false);
+      setPitchFailure("而家呢個預覽未支援即時音高偵測。請使用包含原生音訊模組的 Android／iPhone 測試建置。");
+      return;
+    }
+    const permission = await Promise.race([
+      requestRecordingPermissionsAsync(),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 3500)),
+    ]);
+    if (!permission) {
+      setTestingPitch(false);
+      setPitchFailure("咪高峰權限視窗未有回應。請到 Android 系統設定容許「練吓聲」使用咪高峰後再試。");
+      return;
+    }
+    if (!permission.granted) {
+      setTestingPitch(false);
+      setPitchFailure("需要咪高峰權限先可以測試音高。請容許後再試一次。");
+      return;
+    }
+    pitchValues.current = [];
     try {
       await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
       player.seekTo(0);
@@ -81,9 +96,13 @@ export default function OnboardingScreen() {
     if (step === 1) return startPitchTest();
     return saveAndFinish();
   };
+  const handlePrimaryPress = () => {
+    if (step === 2 && tapTimes.length < 8) return recordTap();
+    void proceed();
+  };
   const item = steps[step];
   const finalAction = tapTimes.length < 8 ? `跟住節拍撳一下（${tapTimes.length}/8）` : "儲存並開始練習";
   const body = testingPitch ? `聽緊你把聲⋯ 已收到 ${pitchFrames} 個音高位置` : pitchFailure ?? item.body;
-  return <ScreenContainer className="p-6" edges={["top", "bottom", "left", "right"]}><View style={styles.page}><Text style={styles.progress}>0{step + 1} — 0{steps.length}</Text><View style={styles.center}><View style={[styles.symbol, testingPitch && styles.symbolActive]}>{step === 0 ? "◒" : step === 1 ? "⌁" : "●"}</View><Text style={styles.eyebrow}>{item.eyebrow}</Text><Text style={styles.title}>{item.title}</Text><Text style={[styles.body, pitchFailure && styles.failure]}>{body}</Text></View><View style={styles.footer}><View style={styles.dots}>{steps.map((_, index) => <View key={index} style={[styles.dot, index === step && styles.dotActive]} />)}</View><Pressable style={[styles.button, testingPitch && styles.disabled]} onPress={step === 2 && tapTimes.length < 8 ? recordTap : proceed} disabled={testingPitch || saveBaseline.isPending}><Text style={styles.buttonText}>{step === 2 ? finalAction : testingPitch ? "測試進行中⋯" : pitchFailure ? "再試一次" : item.action}</Text></Pressable></View></View></ScreenContainer>;
+  return <ScreenContainer className="p-6" edges={["top", "bottom", "left", "right"]}><View style={styles.page}><Text style={styles.progress}>0{step + 1} — 0{steps.length}</Text><View style={styles.center}><View style={[styles.symbol, testingPitch && styles.symbolActive]}>{step === 0 ? "◒" : step === 1 ? "⌁" : "●"}</View><Text style={styles.eyebrow}>{item.eyebrow}</Text><Text style={styles.title}>{item.title}</Text><Text style={[styles.body, pitchFailure && styles.failure]}>{body}</Text></View><View style={styles.footer}><View style={styles.dots}>{steps.map((_, index) => <View key={index} style={[styles.dot, index === step && styles.dotActive]} />)}</View><TouchableOpacity activeOpacity={0.78} style={[styles.button, testingPitch && styles.disabled]} onPress={handlePrimaryPress} disabled={testingPitch || saveBaseline.isPending}><Text style={styles.buttonText}>{step === 2 ? finalAction : testingPitch ? pitchFrames > 0 ? `已收到 ${pitchFrames} 個音高位置` : "準備咪高峰⋯" : pitchFailure ? "再試一次" : item.action}</Text></TouchableOpacity></View></View></ScreenContainer>;
 }
 const styles = StyleSheet.create({ page: { flex: 1, justifyContent: "space-between", paddingVertical: 18 }, progress: { color: "#EF6257", fontSize: 13, fontWeight: "800", letterSpacing: 1.4 }, center: { alignItems: "center", gap: 16, paddingHorizontal: 20 }, symbol: { width: 112, height: 112, borderRadius: 56, backgroundColor: "#DCE7F7", textAlign: "center", textAlignVertical: "center", color: "#2C62B8", fontSize: 56, marginBottom: 12 }, symbolActive: { backgroundColor: "#F9DDD3", color: "#EF6257", transform: [{ scale: 1.05 }] }, eyebrow: { color: "#EF6257", fontSize: 15, fontWeight: "800" }, title: { color: "#172B4D", fontSize: 31, lineHeight: 39, fontWeight: "800", textAlign: "center" }, body: { color: "#62718A", fontSize: 16, lineHeight: 25, textAlign: "center" }, failure: { color: "#C44842" }, footer: { gap: 18 }, dots: { flexDirection: "row", justifyContent: "center", gap: 8 }, dot: { height: 6, width: 6, borderRadius: 4, backgroundColor: "#E7D9C6" }, dotActive: { width: 26, backgroundColor: "#EF6257" }, button: { backgroundColor: "#172B4D", borderRadius: 16, minHeight: 55, alignItems: "center", justifyContent: "center" }, disabled: { opacity: 0.55 }, buttonText: { color: "#FFF9F0", fontWeight: "800", fontSize: 16 } });
