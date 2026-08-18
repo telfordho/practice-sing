@@ -21,6 +21,10 @@ function nativePitchy(): PitchyModule | null {
   }
 }
 
+export function isPitchTrackingAvailable() {
+  return nativePitchy() !== null;
+}
+
 export async function beginPitchTracking(onFrame: (frame: LivePitchFrame) => void) {
   const module = nativePitchy();
   if (!module) return async () => undefined;
